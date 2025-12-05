@@ -38,7 +38,9 @@ def save_users(users):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the /start command."""
     user = update.effective_user
-    logger.info(f"User {user.full_name} ({user.id}) started the bot.")
+    # This line will now appear in your logs if the command is received
+    logger.info(f"RECEIVED /start command from User {user.full_name} ({user.id}).") 
+    
     await update.message.reply_html(
         f"Hello {user.mention_html()}! 👋\n\n"
         f"I am a bot that manages group memberships. "
