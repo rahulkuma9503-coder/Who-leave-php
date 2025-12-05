@@ -4,7 +4,7 @@ import time
 import logging
 
 from telegram import Update
-from telegram.ext import Application, ChatMemberHandler, ContextTypes
+from telegram.ext import Application, ChatMemberHandler, CommandHandler, ContextTypes
 
 # Enable logging to see errors
 logging.basicConfig(
@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 # Get configuration from environment variables
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME")
-# Note: PORT, WEBHOOK_URL, and SECRET_TOKEN are no longer needed for polling.
 
 DATA_FILE = "data/users.json"
 BAN_TIME_SECONDS = 300 # 5 minutes
@@ -33,6 +32,31 @@ def save_users(users):
     """Saves user data to the JSON file."""
     with open(DATA_FILE, "w") as f:
         json.dump(users, f)
+
+# --- NEW: Command Handlers ---
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /start command."""
+    user = update.effective_user
+    logger.info(f"User {user.full_name} ({user.id}) started the bot.")
+    await update.message.reply_html(
+        f"Hello {user.mention_html()}! 👋\n\n"
+        f"I am a bot that manages group memberships. "
+        f"I will automatically ban users who leave a group within 5 minutes of joining.\n\n"
+        f"If you have any issues, please contact my admin: @{ADMIN_USERNAME}\n\n"
+        f"Use /help to see available commands."
+    )
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /help command."""
+    await update.message.reply_text(
+        "Here are the available commands:\n\n"
+        "/start - Welcome message and bot info.\n"
+        "/help - Shows this help message.\n\n"
+        "To use me, add me to your group as an administrator with the 'Ban Users' permission."
+    )
+
+# --- Existing Chat Member Handler ---
 
 async def track_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -110,11 +134,16 @@ def main():
     # Create the Application and pass it your bot's token.
     application = Application.builder().token(TOKEN).build()
 
-    # Register a single ChatMemberHandler to track all member changes
+    # --- Register Handlers ---
+
+    # Register command handlers for direct messages to the bot
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("help", help_command))
+
+    # Register the chat member handler for group updates
     application.add_handler(ChatMemberHandler(track_chat_members, ChatMemberHandler.CHAT_MEMBER))
 
     # Start the bot using polling
-    # This is much simpler than webhooks!
     application.run_polling()
     logger.info("Bot started and is polling...")
 
