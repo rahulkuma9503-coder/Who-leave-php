@@ -3,8 +3,8 @@ import json
 import time
 import logging
 
-from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, ContextTypes # <-- CORRECT IMPORT
+from telegram import Update, ChatMemberUpdated
+from telegram.ext import Application, ChatMemberHandler, ContextTypes
 
 # Enable logging to see errors
 logging.basicConfig(
@@ -38,7 +38,8 @@ def save_users(users):
 
 async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Records the join time of new chat members."""
-    # The new library provides a cleaner way to get the members
+    # The update object for ChatMemberHandler is update.chat_member
+    # The new member(s) are in update.chat_member.new_chat_member
     for member in update.chat_member.new_chat_member:
         user = member.user
         if user.is_bot:
@@ -54,7 +55,7 @@ async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def handle_left_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Checks if a user left too soon and bans them if so."""
-    # The new library provides a cleaner way to get the member
+    # The member who left is in update.chat_member.old_chat_member
     member = update.chat_member.old_chat_member
     user = member.user
 
@@ -111,9 +112,20 @@ def main():
     # Create the Application and pass it your bot's token.
     application = Application.builder().token(TOKEN).build()
 
-    # Register handlers using the new filter syntax
-    application.add_handler(MessageHandler(filters.ChatMember.CREATED, handle_new_members))
-    application.add_handler(MessageHandler(filters.ChatMember.LEFT, handle_left_member))
+    # --- CORRECT HANDLER REGISTRATION ---
+    # Use ChatMemberHandler for member status changes.
+
+    # Handle when a user joins the chat
+    application.add_handler(ChatMemberHandler(
+        chat_member_types=(ChatMemberUpdated.MEMBER_JOINED,),
+        callback=handle_new_members
+    ))
+
+    # Handle when a user leaves the chat
+    application.add_handler(ChatMemberHandler(
+        chat_member_types=(ChatMemberUpdated.MEMBER_LEFT,),
+        callback=handle_left_member
+    ))
 
     # Start the webhook
     application.run_webhook(
