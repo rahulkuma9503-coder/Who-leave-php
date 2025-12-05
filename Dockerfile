@@ -1,38 +1,21 @@
-# Use the official PHP-FPM image as a base
-FROM php:8.2-fpm-alpine
+# Use an official Python runtime as a parent image
+FROM python:3.11-slim
 
-# Install system dependencies and PHP extension build dependencies
-RUN apk add --no-cache \
-    nginx \
-    supervisor \
-    curl \
-    oniguruma-dev \
-    mariadb-dev
+# Set the working directory in the container
+WORKDIR /app
 
-# Install PHP extensions required by the SDK
-RUN docker-php-ext-install pdo pdo_mysql mbstring bcmath curl
+# Copy the requirements file into the container at /app
+COPY requirements.txt .
 
-# Install Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+# Install any needed packages specified in requirements.txt
+# --no-cache-dir reduces image size
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Set working directory
-WORKDIR /var/www/html
-
-# Copy project files
+# Copy the rest of the application's code
 COPY . .
 
-# Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader
+# Create the data directory
+RUN mkdir -p data
 
-# Copy configuration files
-COPY config/nginx.conf /etc/nginx/conf.d/default.conf
-COPY config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-
-# Create the data directory and set permissions
-RUN mkdir -p data && chown -R www-data:www-data /var/www/html
-
-# Expose port 8080 for Render
-EXPOSE 8080
-
-# Start supervisord to manage Nginx and PHP-FPM
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# Run the bot script when the container launches
+CMD ["python", "bot.py"]
