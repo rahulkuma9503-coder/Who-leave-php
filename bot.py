@@ -16,9 +16,7 @@ logger = logging.getLogger(__name__)
 # Get configuration from environment variables
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME")
-SECRET_TOKEN = os.environ.get("TELEGRAM_SECRET_TOKEN")
-PORT = int(os.environ.get("PORT", "8443")) # Render provides PORT, default to 8443 for local dev
-WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL") # Render provides this
+# Note: PORT, WEBHOOK_URL, and SECRET_TOKEN are no longer needed for polling.
 
 DATA_FILE = "data/users.json"
 BAN_TIME_SECONDS = 300 # 5 minutes
@@ -50,7 +48,6 @@ async def track_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     # Case 1: User joined the chat
-    # This happens when the old status was 'left' (or didn't exist) and the new status is 'member'
     if old_status in ['left', 'kicked'] and new_status == 'member':
         logger.info(f"User {user.full_name} ({user.id}) joined chat {update.effective_chat.id}")
         users = load_users()
@@ -61,7 +58,6 @@ async def track_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
         save_users(users)
 
     # Case 2: User left the chat
-    # This happens when the old status was 'member' and the new status is 'left'
     elif old_status == 'member' and new_status == 'left':
         logger.info(f"User {user.full_name} ({user.id}) left chat {update.effective_chat.id}")
         users = load_users()
@@ -85,7 +81,7 @@ async def track_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 await context.bot.ban_chat_member(
                     chat_id=update.effective_chat.id,
                     user_id=user.id,
-                    revoke_messages=True # Optional: removes all messages from the user
+                    revoke_messages=True
                 )
 
                 # Send a message to the banned user
@@ -107,26 +103,20 @@ async def track_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 def main():
     """Start the bot."""
-    if not TOKEN or not ADMIN_USERNAME or not SECRET_TOKEN:
-        logger.error("One or more environment variables are missing!")
+    if not TOKEN or not ADMIN_USERNAME:
+        logger.error("TELEGRAM_BOT_TOKEN or ADMIN_USERNAME is missing!")
         return
 
     # Create the Application and pass it your bot's token.
     application = Application.builder().token(TOKEN).build()
 
     # Register a single ChatMemberHandler to track all member changes
-    # The handler will automatically receive updates for members joining, leaving, etc.
     application.add_handler(ChatMemberHandler(track_chat_members, ChatMemberHandler.CHAT_MEMBER))
 
-    # Start the webhook
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path="bot.py", # The path part of the URL
-        webhook_url=f"{WEBHOOK_URL}/bot.py",
-        secret_token=SECRET_TOKEN
-    )
-    logger.info("Bot started and listening on webhook...")
+    # Start the bot using polling
+    # This is much simpler than webhooks!
+    application.run_polling()
+    logger.info("Bot started and is polling...")
 
 
 if __name__ == "__main__":
