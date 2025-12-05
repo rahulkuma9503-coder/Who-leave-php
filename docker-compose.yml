@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080" # Map local port 8080 to container port 8080
+    volumes:
+      - .:/var/www/html # Mount the code for live changes
+      - ./data:/var/www/html/data # Persist data
+    environment:
+      # IMPORTANT: Fill these in for local testing
+      - TELEGRAM_BOT_TOKEN=YOUR_BOT_TOKEN
+      - ADMIN_USERNAME=YOUR_ADMIN_USERNAME
+      - TELEGRAM_SECRET_TOKEN=A_RANDOM_SECRET_STRING
