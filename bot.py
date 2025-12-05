@@ -62,55 +62,61 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def track_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Handles chat member updates. This single function will track joins and leaves.
+    Handles chat member updates with extensive logging.
     """
     result = update.chat_member
     user = result.new_chat_member.user
     old_status = result.old_chat_member.status
     new_status = result.new_chat_member.status
+    chat_id = update.effective_chat.id
 
     # Ignore bots
     if user.is_bot:
+        logger.info(f"Ignoring bot event for {user.full_name} in chat {chat_id}")
         return
+
+    logger.info(f"Chat member update in {chat_id}: User {user.full_name} ({user.id}) changed from {old_status} to {new_status}")
 
     # Case 1: User joined the chat
     if old_status in ['left', 'kicked'] and new_status == 'member':
-        logger.info(f"User {user.full_name} ({user.id}) joined chat {update.effective_chat.id}")
+        logger.info(f"-> User {user.full_name} ({user.id}) JOINED. Recording join time.")
         users = load_users()
         users[user.id] = {
             "join_time": time.time(),
-            "chat_id": update.effective_chat.id
+            "chat_id": chat_id
         }
         save_users(users)
+        logger.info(f"-> User {user.id} recorded in data file.")
 
     # Case 2: User left the chat
     elif old_status == 'member' and new_status == 'left':
-        logger.info(f"User {user.full_name} ({user.id}) left chat {update.effective_chat.id}")
+        logger.info(f"-> User {user.full_name} ({user.id}) LEFT. Checking for ban eligibility.")
         users = load_users()
         user_data = users.get(user.id)
 
         if not user_data:
-            logger.info(f"User {user.full_name} ({user.id}) left, but was not in our records.")
+            logger.warning(f"-> User {user.id} left, but was NOT found in our records. No action taken.")
             return
 
         join_time = user_data["join_time"]
         time_diff = time.time() - join_time
+        logger.info(f"-> User {user.id} was in the group for {time_diff:.2f} seconds.")
 
         # Clean up user record regardless of the outcome
         del users[user.id]
         save_users(users)
+        logger.info(f"-> User {user.id} removed from data file.")
 
         if time_diff < BAN_TIME_SECONDS:
-            logger.info(f"User {user.full_name} ({user.id}) left too quickly. Banning.")
+            logger.info(f"-> Time difference is less than {BAN_TIME_SECONDS}s. Proceeding with ban.")
             try:
-                # Ban the user from the chat
                 await context.bot.ban_chat_member(
-                    chat_id=update.effective_chat.id,
+                    chat_id=chat_id,
                     user_id=user.id,
                     revoke_messages=True
                 )
+                logger.info(f"-> SUCCESS: Banned user {user.id}.")
 
-                # Send a message to the banned user
                 ban_message = (
                     f"Hello {user.full_name},\n\n"
                     f"You have been automatically banned from the group for leaving within 5 minutes of joining.\n\n"
@@ -120,12 +126,14 @@ async def track_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     chat_id=user.id,
                     text=ban_message
                 )
+                logger.info(f"-> Sent ban notification message to user {user.id}.")
 
             except Exception as e:
-                logger.error(f"Failed to ban user {user.id}: {e}")
+                logger.error(f"-> FAILED to ban user {user.id}. Error: {e}")
         else:
-            logger.info(f"User {user.full_name} ({user.id}) left after {time_diff:.2f} seconds. No action taken.")
-
+            logger.info(f"-> Time difference is greater than {BAN_TIME_SECONDS}s. No ban needed.")
+    else:
+        logger.info(f"-> Member status change not relevant for join/leave logic.")
 
 def main():
     """Start the bot."""
