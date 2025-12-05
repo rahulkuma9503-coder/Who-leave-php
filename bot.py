@@ -2,10 +2,9 @@ import os
 import json
 import time
 import logging
-from datetime import datetime, timedelta
 
-from telegram import Update, filters # <-- CHANGE 1: Import 'filters' from 'telegram'
-from telegram.ext import Application, MessageHandler, ContextTypes
+from telegram import Update
+from telegram.ext import Application, MessageHandler, filters, ContextTypes # <-- CORRECT IMPORT
 
 # Enable logging to see errors
 logging.basicConfig(
@@ -113,7 +112,6 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     # Register handlers using the new filter syntax
-    # CHANGE 2: Updated filters for chat member updates
     application.add_handler(MessageHandler(filters.ChatMember.CREATED, handle_new_members))
     application.add_handler(MessageHandler(filters.ChatMember.LEFT, handle_left_member))
 
