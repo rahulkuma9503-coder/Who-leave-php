@@ -1,7 +1,7 @@
 services:
   # The name of your service
   - type: web
-    name: php-telegram-ban-bot
+    name: python-telegram-ban-bot
     env: docker
     plan: free # Render's free tier
     # Health check path for Render to ensure the service is running
