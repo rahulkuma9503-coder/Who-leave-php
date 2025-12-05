@@ -4,8 +4,8 @@ import time
 import logging
 from datetime import datetime, timedelta
 
-from telegram import Update
-from telegram.ext import Application, MessageHandler, Filters, ContextTypes
+from telegram import Update, filters # <-- CHANGE 1: Import 'filters' from 'telegram'
+from telegram.ext import Application, MessageHandler, ContextTypes
 
 # Enable logging to see errors
 logging.basicConfig(
@@ -39,70 +39,68 @@ def save_users(users):
 
 async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Records the join time of new chat members."""
-    if not update.message or not update.message.new_chat_members:
-        return
-
-    users = load_users()
-    for user in update.message.new_chat_members:
-        # Don't record the bot itself
+    # The new library provides a cleaner way to get the members
+    for member in update.chat_member.new_chat_member:
+        user = member.user
         if user.is_bot:
             continue
         logger.info(f"User {user.full_name} ({user.id}) joined chat {update.effective_chat.id}")
+        
+        users = load_users()
         users[user.id] = {
             "join_time": time.time(),
             "chat_id": update.effective_chat.id
         }
-    save_users(users)
+        save_users(users)
 
 async def handle_left_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Checks if a user left too soon and bans them if so."""
-    if not update.message or not update.message.left_chat_member:
-        return
+    # The new library provides a cleaner way to get the member
+    member = update.chat_member.old_chat_member
+    user = member.user
 
-    left_user = update.message.left_chat_member
-    # Don't act on bots leaving
-    if left_user.is_bot:
+    if user.is_bot:
         return
 
     users = load_users()
-    user_data = users.get(left_user.id)
+    user_data = users.get(user.id)
 
     if not user_data:
-        logger.info(f"User {left_user.full_name} ({left_user.id}) left, but was not in our records.")
+        logger.info(f"User {user.full_name} ({user.id}) left, but was not in our records.")
         return
 
     join_time = user_data["join_time"]
     time_diff = time.time() - join_time
 
     # Clean up user record regardless of the outcome
-    del users[left_user.id]
+    del users[user.id]
     save_users(users)
 
     if time_diff < BAN_TIME_SECONDS:
-        logger.info(f"User {left_user.full_name} ({left_user.id}) left too quickly. Banning.")
+        logger.info(f"User {user.full_name} ({user.id}) left too quickly. Banning.")
         try:
             # Ban the user from the chat
             await context.bot.ban_chat_member(
                 chat_id=update.effective_chat.id,
-                user_id=left_user.id,
+                user_id=user.id,
                 revoke_messages=True # Optional: removes all messages from the user
             )
 
             # Send a message to the banned user
             ban_message = (
-                f"Hello {left_user.full_name},\n\n"
+                f"Hello {user.full_name},\n\n"
                 f"You have been automatically banned from the group for leaving within 5 minutes of joining.\n\n"
                 f"If you think this was a mistake, please contact the admin: @{ADMIN_USERNAME}"
             )
             await context.bot.send_message(
-                chat_id=left_user.id,
+                chat_id=user.id,
                 text=ban_message
             )
 
         except Exception as e:
-            logger.error(f"Failed to ban user {left_user.id}: {e}")
+            logger.error(f"Failed to ban user {user.id}: {e}")
     else:
-        logger.info(f"User {left_user.full_name} ({left_user.id}) left after {time_diff:.2f} seconds. No action taken.")
+        logger.info(f"User {user.full_name} ({user.id}) left after {time_diff:.2f} seconds. No action taken.")
 
 
 def main():
@@ -114,9 +112,10 @@ def main():
     # Create the Application and pass it your bot's token.
     application = Application.builder().token(TOKEN).build()
 
-    # Register handlers
-    application.add_handler(MessageHandler(Filters.STATUS_UPDATE.new_chat_members, handle_new_members))
-    application.add_handler(MessageHandler(Filters.STATUS_UPDATE.left_chat_member, handle_left_member))
+    # Register handlers using the new filter syntax
+    # CHANGE 2: Updated filters for chat member updates
+    application.add_handler(MessageHandler(filters.ChatMember.CREATED, handle_new_members))
+    application.add_handler(MessageHandler(filters.ChatMember.LEFT, handle_left_member))
 
     # Start the webhook
     application.run_webhook(
