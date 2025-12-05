@@ -3,7 +3,7 @@ import json
 import time
 import logging
 
-from telegram import Update, ChatMemberUpdated
+from telegram import Update
 from telegram.ext import Application, ChatMemberHandler, ContextTypes
 
 # Enable logging to see errors
@@ -36,16 +36,23 @@ def save_users(users):
     with open(DATA_FILE, "w") as f:
         json.dump(users, f)
 
-async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Records the join time of new chat members."""
-    # The update object for ChatMemberHandler is update.chat_member
-    # The new member(s) are in update.chat_member.new_chat_member
-    for member in update.chat_member.new_chat_member:
-        user = member.user
-        if user.is_bot:
-            continue
+async def track_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles chat member updates. This single function will track joins and leaves.
+    """
+    result = update.chat_member
+    user = result.new_chat_member.user
+    old_status = result.old_chat_member.status
+    new_status = result.new_chat_member.status
+
+    # Ignore bots
+    if user.is_bot:
+        return
+
+    # Case 1: User joined the chat
+    # This happens when the old status was 'left' (or didn't exist) and the new status is 'member'
+    if old_status in ['left', 'kicked'] and new_status == 'member':
         logger.info(f"User {user.full_name} ({user.id}) joined chat {update.effective_chat.id}")
-        
         users = load_users()
         users[user.id] = {
             "join_time": time.time(),
@@ -53,54 +60,49 @@ async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
         }
         save_users(users)
 
-async def handle_left_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Checks if a user left too soon and bans them if so."""
-    # The member who left is in update.chat_member.old_chat_member
-    member = update.chat_member.old_chat_member
-    user = member.user
+    # Case 2: User left the chat
+    # This happens when the old status was 'member' and the new status is 'left'
+    elif old_status == 'member' and new_status == 'left':
+        logger.info(f"User {user.full_name} ({user.id}) left chat {update.effective_chat.id}")
+        users = load_users()
+        user_data = users.get(user.id)
 
-    if user.is_bot:
-        return
+        if not user_data:
+            logger.info(f"User {user.full_name} ({user.id}) left, but was not in our records.")
+            return
 
-    users = load_users()
-    user_data = users.get(user.id)
+        join_time = user_data["join_time"]
+        time_diff = time.time() - join_time
 
-    if not user_data:
-        logger.info(f"User {user.full_name} ({user.id}) left, but was not in our records.")
-        return
+        # Clean up user record regardless of the outcome
+        del users[user.id]
+        save_users(users)
 
-    join_time = user_data["join_time"]
-    time_diff = time.time() - join_time
+        if time_diff < BAN_TIME_SECONDS:
+            logger.info(f"User {user.full_name} ({user.id}) left too quickly. Banning.")
+            try:
+                # Ban the user from the chat
+                await context.bot.ban_chat_member(
+                    chat_id=update.effective_chat.id,
+                    user_id=user.id,
+                    revoke_messages=True # Optional: removes all messages from the user
+                )
 
-    # Clean up user record regardless of the outcome
-    del users[user.id]
-    save_users(users)
+                # Send a message to the banned user
+                ban_message = (
+                    f"Hello {user.full_name},\n\n"
+                    f"You have been automatically banned from the group for leaving within 5 minutes of joining.\n\n"
+                    f"If you think this was a mistake, please contact the admin: @{ADMIN_USERNAME}"
+                )
+                await context.bot.send_message(
+                    chat_id=user.id,
+                    text=ban_message
+                )
 
-    if time_diff < BAN_TIME_SECONDS:
-        logger.info(f"User {user.full_name} ({user.id}) left too quickly. Banning.")
-        try:
-            # Ban the user from the chat
-            await context.bot.ban_chat_member(
-                chat_id=update.effective_chat.id,
-                user_id=user.id,
-                revoke_messages=True # Optional: removes all messages from the user
-            )
-
-            # Send a message to the banned user
-            ban_message = (
-                f"Hello {user.full_name},\n\n"
-                f"You have been automatically banned from the group for leaving within 5 minutes of joining.\n\n"
-                f"If you think this was a mistake, please contact the admin: @{ADMIN_USERNAME}"
-            )
-            await context.bot.send_message(
-                chat_id=user.id,
-                text=ban_message
-            )
-
-        except Exception as e:
-            logger.error(f"Failed to ban user {user.id}: {e}")
-    else:
-        logger.info(f"User {user.full_name} ({user.id}) left after {time_diff:.2f} seconds. No action taken.")
+            except Exception as e:
+                logger.error(f"Failed to ban user {user.id}: {e}")
+        else:
+            logger.info(f"User {user.full_name} ({user.id}) left after {time_diff:.2f} seconds. No action taken.")
 
 
 def main():
@@ -112,20 +114,9 @@ def main():
     # Create the Application and pass it your bot's token.
     application = Application.builder().token(TOKEN).build()
 
-    # --- CORRECT HANDLER REGISTRATION ---
-    # Use ChatMemberHandler for member status changes.
-
-    # Handle when a user joins the chat
-    application.add_handler(ChatMemberHandler(
-        chat_member_types=(ChatMemberUpdated.MEMBER_JOINED,),
-        callback=handle_new_members
-    ))
-
-    # Handle when a user leaves the chat
-    application.add_handler(ChatMemberHandler(
-        chat_member_types=(ChatMemberUpdated.MEMBER_LEFT,),
-        callback=handle_left_member
-    ))
+    # Register a single ChatMemberHandler to track all member changes
+    # The handler will automatically receive updates for members joining, leaving, etc.
+    application.add_handler(ChatMemberHandler(track_chat_members, ChatMemberHandler.CHAT_MEMBER))
 
     # Start the webhook
     application.run_webhook(
