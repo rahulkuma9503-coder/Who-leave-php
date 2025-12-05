@@ -1,11 +1,13 @@
 # Use the official PHP-FPM image as a base
 FROM php:8.2-fpm-alpine
 
-# Install system dependencies
+# Install system dependencies and PHP extension build dependencies
 RUN apk add --no-cache \
     nginx \
     supervisor \
-    curl
+    curl \
+    oniguruma-dev \
+    mariadb-dev
 
 # Install PHP extensions required by the SDK
 RUN docker-php-ext-install pdo pdo_mysql mbstring bcmath curl
@@ -29,7 +31,7 @@ COPY config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 # Create the data directory and set permissions
 RUN mkdir -p data && chown -R www-data:www-data /var/www/html
 
-# Expose port 8080 for Render (Render expects $PORT, but we configure Nginx to listen on 8080)
+# Expose port 8080 for Render
 EXPOSE 8080
 
 # Start supervisord to manage Nginx and PHP-FPM
