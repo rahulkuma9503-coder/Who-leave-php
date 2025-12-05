@@ -1,0 +1,20 @@
+services:
+  # The name of your service
+  - type: web
+    name: php-telegram-ban-bot
+    env: docker
+    plan: free # Render's free tier
+    # Health check path for Render to ensure the service is running
+    healthCheckPath: /
+    # Auto-deploy on every push to the main branch
+    autoDeploy: true
+    # Specify the Dockerfile location
+    dockerfilePath: ./Dockerfile
+    # Add environment variables here. It's better to add secrets in the Render UI.
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false # Set this value in the Render dashboard
+      - key: ADMIN_USERNAME
+        sync: false # Set this value in the Render dashboard
+      - key: TELEGRAM_SECRET_TOKEN
+        sync: false # Set this value in the Render dashboard
