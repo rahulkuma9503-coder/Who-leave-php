@@ -8,7 +8,6 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install any needed packages specified in requirements.txt
-# --no-cache-dir reduces image size
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application's code
